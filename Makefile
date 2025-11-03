@@ -1,10 +1,10 @@
 # Run Django dev server with Sqlite
 run-dev:
-	DJANGO_DB=sqlite LOG_DIR=tmp DEBUG=true LOG_LEVEL=DEBUG DJANGO_SETTINGS_MODULE=core.settings.label_studio poetry run python label_studio/manage.py runserver
+	DJANGO_DB=sqlite LOG_DIR=tmp DEBUG=true LOG_LEVEL=DEBUG DJANGO_SETTINGS_MODULE=core.settings.label_studio BASE_DATA_DIR=/root/autodl-tmp/labelstudio-data-dir LOCAL_FILES_SERVING_ENABLED=true LOCAL_FILES_DOCUMENT_ROOT=/root/autodl-tmp python label_studio/manage.py runserver
 
 # Run Django dev migrations with Sqlite
 migrate-dev:
-	DJANGO_DB=sqlite LOG_DIR=tmp DEBUG=true LOG_LEVEL=DEBUG DJANGO_SETTINGS_MODULE=core.settings.label_studio poetry run python label_studio/manage.py migrate
+	DJANGO_DB=sqlite LOG_DIR=tmp DEBUG=true LOG_LEVEL=DEBUG DJANGO_SETTINGS_MODULE=core.settings.label_studio BASE_DATA_DIR=/root/autodl-tmp/labelstudio-data-dir LOCAL_FILES_SERVING_ENABLED=true LOCAL_FILES_DOCUMENT_ROOT=/root/autodl-tmp python label_studio/manage.py migrate
 
 # Run Django dev make migrations with Sqlite
 makemigrations-dev:

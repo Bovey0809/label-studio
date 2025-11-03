@@ -215,7 +215,7 @@ def localfiles_data(request):
         # storage.path=/home/user, full_path=/home/user/a/b/c/1.jpg =>
         # full_path.startswith(path) => True
         localfiles_storage = LocalFilesImportStorage.objects.annotate(
-            _full_path=Value(os.path.dirname(full_path), output_field=CharField())
+            _full_path=Value(str(full_path), output_field=CharField())
         ).filter(_full_path__startswith=F('path'))
         if localfiles_storage.exists():
             user_has_permissions = any(storage.project.has_permission(user) for storage in localfiles_storage)
