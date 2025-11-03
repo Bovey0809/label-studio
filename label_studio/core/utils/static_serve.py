@@ -8,6 +8,7 @@ import posixpath
 from pathlib import Path
 
 from core.utils.manifest_assets import get_manifest_asset
+from django.conf import settings
 from django.http import (
     Http404,
     HttpResponseNotModified,
@@ -51,11 +52,21 @@ def serve(request, path, document_root=None, show_indexes=False, manifest_asset_
         raise Http404(_('Directory indexes are not allowed here.'))
     if manifest_asset_prefix and not fullpath.exists():
         possible_asset = get_manifest_asset(path)
+        # Strip FRONTEND_HOSTNAME if present (e.g., "http://localhost:8080/react-app/main.js" -> "/react-app/main.js")
+        # Handle empty FRONTEND_HOSTNAME or just "/"
+        if settings.FRONTEND_HOSTNAME:
+            # Remove trailing slash if present to avoid double slashes
+            hostname = settings.FRONTEND_HOSTNAME.rstrip('/')
+            if possible_asset.startswith(hostname):
+                possible_asset = possible_asset[len(hostname):]
         manifest_asset_prefix = (
             f'/{manifest_asset_prefix}' if not manifest_asset_prefix.startswith('/') else manifest_asset_prefix
         )
         if possible_asset.startswith(manifest_asset_prefix):
             possible_asset = possible_asset[len(manifest_asset_prefix) :]
+        # Strip any leading slash and normalize the path for safe_join
+        # This ensures paths like "/runtime.js" become "runtime.js"
+        possible_asset = posixpath.normpath(possible_asset).lstrip('/')
         fullpath = Path(safe_join(document_root, possible_asset))
     if not fullpath.exists():
         raise Http404(_('“%(path)s” does not exist') % {'path': fullpath})

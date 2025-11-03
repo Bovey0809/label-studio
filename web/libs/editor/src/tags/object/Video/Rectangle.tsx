@@ -51,13 +51,36 @@ const RectanglePure: FC<RectProps> = ({
   const onDimensionUpdate = (e: KonvaEventObject<Event>) => {
     const node = e.target;
 
-    if (e.type === "dragmove") onDragMove(e as KonvaEventObject<DragEvent>);
+    if (e.type === "dragmove") {
+      // During drag, only update position (x, y), preserve width/height from current frame
+      onDragMove(e as KonvaEventObject<DragEvent>);
+      const currentShape = reg.getShape(frame);
+      if (currentShape) {
+        const dimensions = getNodeAbsoluteDimensions(node, workingArea);
+        reg.updateShape({
+          ...currentShape,
+          x: dimensions.x,
+          y: dimensions.y,
+          rotation: dimensions.rotation,
+        }, frame);
+      }
+      return;
+    }
 
+    // Ensure scale is applied to width/height before getting dimensions
+    if (e.type === "transformend") {
+      normalizeNodeDimentions(node, "rect");
+    }
+
+    // For transform events, update all dimensions including width/height
     reg.updateShape(getNodeAbsoluteDimensions(node, workingArea), frame);
   };
 
   const onTransform = (e: KonvaEventObject<Event>) => {
     normalizeNodeDimentions(e.target, "rect");
+    // Update dimensions during transform (resize) so width/height change is captured
+    const node = e.target;
+    reg.updateShape(getNodeAbsoluteDimensions(node, workingArea), frame);
   };
 
   return (
