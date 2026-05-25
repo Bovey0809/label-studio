@@ -233,6 +233,7 @@ INSTALLED_APPS = [
     'jwt_auth',
     'session_policy',
     'fsm',
+    'video_index',
 ]
 
 MIDDLEWARE = [
