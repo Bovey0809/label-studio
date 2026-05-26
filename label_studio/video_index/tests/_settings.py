@@ -33,3 +33,19 @@ TEMPLATES: list[dict] = []
 VIDEO_INDEX_FFPROBE_PATH = "ffprobe"
 VIDEO_INDEX_PROBE_TIMEOUT_SECONDS = 120
 VIDEO_INDEX_MAX_PAYLOAD_BYTES = 5_000_000
+
+# Minimal django-rq config so the @job("low") decorator can be imported in tests.
+# A real Redis connection is not required because all job calls in tests are
+# invoked directly (not via .delay()), so the queue is never actually used.
+RQ_QUEUES = {
+    "low": {
+        "HOST": "localhost",
+        "PORT": 6379,
+        "DB": 0,
+    },
+    "default": {
+        "HOST": "localhost",
+        "PORT": 6379,
+        "DB": 0,
+    },
+}
