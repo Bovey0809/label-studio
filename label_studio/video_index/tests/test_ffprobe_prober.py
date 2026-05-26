@@ -33,3 +33,37 @@ def test_probe_vfr_fixture():
     # PTS must be strictly monotonic
     for i in range(1, len(result.pts)):
         assert result.pts[i] >= result.pts[i - 1]
+
+
+@requires_ffmpeg
+def test_audio_only_raises_no_video_stream():
+    from video_index.services.probe import NoVideoStream
+    with pytest.raises(NoVideoStream):
+        FfprobeProber().probe(str(FIXTURES / "audio_only.mp4"))
+
+
+@requires_ffmpeg
+def test_corrupt_file_raises_probe_failed():
+    from video_index.services.probe import ProbeFailed, NoVideoStream
+    # Either is acceptable: ffprobe may emit packets-with-no-pts (-> NoVideoStream)
+    # or return non-zero (-> ProbeFailed).
+    with pytest.raises((ProbeFailed, NoVideoStream)):
+        FfprobeProber().probe(str(FIXTURES / "corrupt_truncated.mp4"))
+
+
+def test_missing_binary_raises_ffmpeg_not_installed():
+    from video_index.services.probe import FfmpegNotInstalled
+    prober = FfprobeProber(ffprobe_path="/definitely/not/installed/ffprobe-xyz")
+    with pytest.raises(FfmpegNotInstalled):
+        prober.probe("anything.mp4")
+
+
+def test_subprocess_timeout_raises_probe_timeout(tmp_path):
+    from unittest.mock import patch
+    import subprocess
+    from video_index.services.probe import ProbeTimeout
+    prober = FfprobeProber(timeout_seconds=1)
+    with patch("video_index.services.probe.subprocess.run", side_effect=subprocess.TimeoutExpired("ffprobe", 1)):
+        with patch("video_index.services.probe.shutil.which", return_value="/usr/bin/ffprobe"):
+            with pytest.raises(ProbeTimeout):
+                prober.probe("anything.mp4")

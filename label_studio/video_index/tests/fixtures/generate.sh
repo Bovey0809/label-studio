@@ -19,8 +19,10 @@ rm _v_60.mp4 _v_15.mp4 _concat.txt
 # 3) Audio only
 ffmpeg -y -f lavfi -i "sine=frequency=440:duration=1" -c:a aac audio_only.mp4
 
-# 4) Corrupt: truncate the CFR file mid-stream
-head -c 2048 cfr_30fps_3s.mp4 > corrupt_truncated.mp4
+# 4) Corrupt: truncate to just the MP4 header bytes so ffprobe cannot find any packets.
+#    100 bytes preserves enough of the ftyp/moov box headers to look like an MP4 to magic
+#    sniffing, but no audio/video stream data survives, so probing raises.
+head -c 100 cfr_30fps_3s.mp4 > corrupt_truncated.mp4
 
 # 5) Expected JSON for the two video fixtures
 for name in cfr_30fps_3s vfr_drone_2s; do
