@@ -110,6 +110,8 @@ const Model = types
     length: 1,
     drawingRegion: null,
     loopTimelineRegion: false,
+    index: null,
+    indexStatus: "idle", // "idle" | "loading" | "ready" | "failed"
   }))
   .views((self) => ({
     get store() {
@@ -218,11 +220,13 @@ const Model = types
      */
     triggerSync(event, data) {
       if (!self.ref.current) return;
-
+      const time = self.index
+        ? self.index.timeAt(self.frame)
+        : self.ref.current.frameSteppedTime();
       self.syncSend(
         {
           playing: self.ref.current.playing,
-          time: self.ref.current.frameSteppedTime(),
+          time,
           ...data,
         },
         event,
@@ -365,6 +369,16 @@ const Model = types
         self.length = length;
       },
 
+      setIndex(index) {
+        self.index = index;
+        self.indexStatus = "ready";
+        if (index) self.length = index.length;
+      },
+
+      setIndexStatus(status) {
+        self.indexStatus = status;
+      },
+
       setOnlyFrame(frame) {
         if (self.frame !== frame) {
           self.frame = frame;
@@ -372,11 +386,15 @@ const Model = types
       },
 
       setFrame(frame) {
-        if (self.frame !== frame && self.framerate) {
+        if (self.frame !== frame) {
           self.frame = frame;
-          if (isFF(FF_VIDEO_FRAME_SEEK_PRECISION)) {
+          if (self.index) {
+            self.ref.current.currentTime = self.index.timeAt(frame);
+            return;
+          }
+          if (isFF(FF_VIDEO_FRAME_SEEK_PRECISION) && self.framerate) {
             self.ref.current.goToFrame(frame);
-          } else {
+          } else if (self.framerate) {
             self.ref.current.currentTime = frame / self.framerate;
           }
         }
@@ -503,3 +521,9 @@ export const VideoModel = types.compose(
   Model,
   IsReadyMixin,
 );
+
+// Test-only factory used by Video.test.js to instantiate the model without the
+// full Label Studio store. Do NOT use in production code.
+export function VideoModelFactoryForTests() {
+  return types.compose(TagAttrs, Model);
+}
