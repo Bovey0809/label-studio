@@ -401,6 +401,10 @@ const Model = types
       },
 
       addVideoRegion(data) {
+        if (self.indexStatus !== "ready") {
+          console.warn("[Video] region creation blocked; index not ready");
+          return;
+        }
         const control = self.videoControl;
 
         if (!control) {

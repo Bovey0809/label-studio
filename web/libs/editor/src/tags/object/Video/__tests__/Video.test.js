@@ -35,4 +35,12 @@ describe("Video MST integration", () => {
     expect(inst.indexStatus).toBe("failed");
     expect(inst.index).toBeNull();
   });
+
+  it("addVideoRegion is a no-op when indexStatus is not 'ready'", () => {
+    const Model = VideoModule.VideoModelFactoryForTests();
+    const inst = Model.create({ type: "video" });
+    // indexStatus defaults to "idle"
+    const result = inst.addVideoRegion({});
+    expect(result).toBeUndefined();
+  });
 });
