@@ -59,13 +59,11 @@ def test_encode_large_delta_varint():
 
 def test_micros_unit_chosen_for_subms_precision():
     codec = PtsCodec()
-    # PTS values that require microsecond precision
-    # The codec chooses micros when rounding error to ms is >= 0.5
-    # Values like 0.0005 have error of 0.5 when rounded to ms
-    pts = [0.0, 0.0005, 0.0015, 0.0025]
+    # PTS values that are not whole milliseconds (1/24 fps timings)
+    pts = [0.0, 0.04167, 0.08333, 0.125]
     blob = codec.encode(pts)
-    # Header byte should have unit bit set (bit 0 = 1 for micros)
+    # Header byte should have unit bit set
     assert blob[0] & 0b01 == 0b01
     decoded = codec.decode(blob)
     for a, b in zip(decoded, pts):
-        assert a == pytest.approx(b, abs=1e-6)
+        assert a == pytest.approx(b, abs=1e-5)

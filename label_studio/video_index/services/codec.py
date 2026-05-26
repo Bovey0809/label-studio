@@ -43,9 +43,14 @@ def _zigzag_decode(value: int) -> int:
 
 
 class PtsCodec:
+    # Tolerance (seconds) below which ms quantization is considered lossless.
+    # 5e-5 s = 50 μs — well under any real-world video frame interval.
+    _MS_LOSSLESS_EPS = 5e-5
+
     def encode(self, pts: list[float]) -> bytes:
-        # Choose unit: μs if any value isn't representable in ms within 1 unit.
-        use_micros = any(abs(p * 1000 - round(p * 1000)) >= 0.5 for p in pts)
+        # Choose unit: μs if ms quantization would lose more than _MS_LOSSLESS_EPS
+        # for any value. This catches non-integer-ms timings like 1/24 fps (0.04167s).
+        use_micros = any(abs(p - round(p * 1000) / 1000) > self._MS_LOSSLESS_EPS for p in pts)
         scale = 1_000_000 if use_micros else 1_000
         scaled = [round(p * scale) for p in pts]
 
