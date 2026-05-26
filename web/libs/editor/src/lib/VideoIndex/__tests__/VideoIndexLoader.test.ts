@@ -35,3 +35,42 @@ describe("VideoIndexLoader — server happy path", () => {
     await expect(loader.load({ videoUrl: "u" })).rejects.toThrow(/corrupt/i);
   });
 });
+
+describe("VideoIndexLoader — wasm fallback", () => {
+  it("dispatches wasm probe on 409 and POSTs the result back", async () => {
+    const posts: any[] = [];
+    const transport: LoaderTransport = {
+      async get() { return { status: 409, body: { status: "unavailable", error: "no ffmpeg" } }; },
+      async post(body) { posts.push(body); return { status: 201, body: { ok: true } }; },
+    };
+    const wasmProbe = jest.fn().mockResolvedValue({
+      content_key: "k", frame_count: 2, duration: 0.05, codec: "h264", pts: [0, 0.05],
+    });
+    const loader = new VideoIndexLoader({ transport, pollIntervalMs: 1, fallbackTimeoutMs: 60_000, wasmProbe });
+    const idx = await loader.load({ videoUrl: "u" });
+    expect(idx.length).toBe(2);
+    expect(wasmProbe).toHaveBeenCalledTimes(1);
+    expect(posts).toHaveLength(1);
+    expect(posts[0].content_key).toBe("k");
+  });
+
+  it("races wasm against server when polling exceeds fallbackTimeoutMs", async () => {
+    let gets = 0;
+    const transport: LoaderTransport = {
+      async get() {
+        gets++;
+        // Stay 202 indefinitely so wasm has to win.
+        return { status: 202, body: { status: "pending", content_key: "k" } };
+      },
+      async post() { return { status: 201, body: {} }; },
+    };
+    const wasmProbe = jest.fn().mockResolvedValue({
+      content_key: "k", frame_count: 1, duration: 0, codec: "h264", pts: [0],
+    });
+    const loader = new VideoIndexLoader({ transport, pollIntervalMs: 5, fallbackTimeoutMs: 20, wasmProbe });
+    const idx = await loader.load({ videoUrl: "u" });
+    expect(idx.length).toBe(1);
+    expect(wasmProbe).toHaveBeenCalledTimes(1);
+    expect(gets).toBeGreaterThanOrEqual(1); // server was being polled in parallel
+  });
+});
