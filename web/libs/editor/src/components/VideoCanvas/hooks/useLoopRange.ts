@@ -1,6 +1,7 @@
 import { type MutableRefObject, useCallback, useEffect, useRef } from "react";
 import { FF_VIDEO_FRAME_SEEK_PRECISION, isFF } from "../../../utils/feature-flags";
 import type { VideoRef } from "../VideoCanvas";
+import type { VideoIndex } from "../../../lib/VideoIndex";
 
 type UseLoopRangeProps = {
   loopFrameRange?: boolean;
@@ -9,6 +10,7 @@ type UseLoopRangeProps = {
   onRedrawRequest?: () => void;
   videoRef: MutableRefObject<HTMLVideoElement | undefined>;
   refSource: VideoRef;
+  index?: VideoIndex | null;
 };
 
 type UseLoopRangeReturn = {
@@ -22,7 +24,9 @@ export const useLoopRange = ({
   onRedrawRequest,
   videoRef,
   refSource,
+  index,
 }: UseLoopRangeProps): UseLoopRangeReturn => {
+  const optsIndex = index ?? null;
   const framerateRef = useRef(framerate);
   framerateRef.current = framerate;
   const sourceRef = useRef(refSource);
@@ -40,9 +44,11 @@ export const useLoopRange = ({
       const startFrame = selectedFrameRange.start;
       const endFrame = selectedFrameRange.end;
 
-      const currentFrame = isFF(FF_VIDEO_FRAME_SEEK_PRECISION)
-        ? Math.ceil(mediaTime * framerateRef.current)
-        : Math.round(mediaTime * framerateRef.current);
+      const currentFrame = optsIndex
+        ? optsIndex.frameAt(mediaTime)
+        : isFF(FF_VIDEO_FRAME_SEEK_PRECISION)
+          ? Math.ceil(mediaTime * framerateRef.current)
+          : Math.round(mediaTime * framerateRef.current);
 
       if (currentFrame < startFrame) {
         // If current time is before the start of the range, seek to the start
@@ -90,8 +96,12 @@ export const useLoopRange = ({
 
   const prepareLoop = useCallback(() => {
     if (selectedFrameRange && videoRef.current) {
-      const startTime = (selectedFrameRange.start - 1) / framerateRef.current;
-      const endTime = (selectedFrameRange.end - 1) / framerateRef.current;
+      const startTime = optsIndex
+        ? optsIndex.timeAt(selectedFrameRange.start)
+        : (selectedFrameRange.start - 1) / framerateRef.current;
+      const endTime = optsIndex
+        ? optsIndex.timeAt(selectedFrameRange.end)
+        : (selectedFrameRange.end - 1) / framerateRef.current;
 
       if (videoRef.current.currentTime < startTime || videoRef.current.currentTime >= endTime) {
         sourceRef.current.goToFrame(selectedFrameRange.start);
