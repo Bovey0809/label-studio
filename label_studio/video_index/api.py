@@ -1,3 +1,4 @@
+from django.db import connection, transaction
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -5,16 +6,23 @@ from rest_framework.views import APIView
 from .jobs import compute_video_index
 from .models import VideoIndex
 from .serializers import VideoIndexSerializer
+from .services.codec import PtsCodec
 from .services.resolver import VideoUrlResolver
 
+REQUIRED_POST_FIELDS = {"content_key", "pts", "frame_count", "duration", "codec", "width", "height"}
 
-def resolve_content_key(task_id: int | None, raw_url: str) -> str:
-    """Return the content_key that should be looked up for (task, url).
 
-    Split out so tests can monkeypatch it without spinning up real URL fetches.
-    """
+def resolve_content_key(task_id, raw_url: str) -> str:
     resolved = VideoUrlResolver().resolve(task=task_id, raw_url=raw_url)
     return resolved.content_key
+
+
+def _lock_row(content_key: str):
+    """SELECT … FOR UPDATE on SQL backends that support it; plain SELECT on SQLite."""
+    qs = VideoIndex.objects.filter(content_key=content_key)
+    if connection.vendor != "sqlite":
+        qs = qs.select_for_update()
+    return qs.first()
 
 
 class VideoIndexView(APIView):
@@ -43,3 +51,33 @@ class VideoIndexView(APIView):
         if row.status == VideoIndex.STATUS_FAILED:
             return Response({"status": "failed", "error": row.error}, status=422)
         return Response({"status": "unknown"}, status=500)
+
+    def post(self, request):
+        missing = REQUIRED_POST_FIELDS - set(request.data.keys())
+        if missing:
+            return Response({"error": f"missing fields: {sorted(missing)}"}, status=400)
+
+        content_key = request.data["content_key"]
+        with transaction.atomic():
+            row = _lock_row(content_key)
+
+            if row and row.status == VideoIndex.STATUS_READY:
+                return Response({"already_ready": True}, status=200)
+
+            blob = PtsCodec().encode([float(p) for p in request.data["pts"]])
+
+            if row is None:
+                row = VideoIndex.objects.create(content_key=content_key)
+
+            row.status = VideoIndex.STATUS_READY
+            row.pts_blob = blob
+            row.frame_count = int(request.data["frame_count"])
+            row.duration = float(request.data["duration"])
+            row.codec = request.data["codec"]
+            row.width = int(request.data["width"])
+            row.height = int(request.data["height"])
+            row.source = VideoIndex.SOURCE_CLIENT
+            row.error = ""
+            row.save()
+
+        return Response(VideoIndexSerializer(row).data, status=201)
