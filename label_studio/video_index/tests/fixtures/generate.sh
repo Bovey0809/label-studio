@@ -31,6 +31,10 @@ name = sys.argv[1]
 with open(f"_{name}_raw.json") as f:
     raw = json.load(f)
 pts = [float(pkt["pts_time"]) for pkt in raw.get("packets", []) if "pts_time" in pkt]
+# Sort to presentation order — ffprobe -show_packets emits in decode order;
+# B-frame reordering makes those two differ. Frame N in LS is the Nth frame
+# in presentation order, matching `ffmpeg -vf select=eq(n,N)`.
+pts.sort()
 out = {"pts": pts, "frame_count": len(pts)}
 with open(f"{name}.expected.json", "w") as f:
     json.dump(out, f, indent=2)
