@@ -45,7 +45,7 @@ def _zigzag_decode(value: int) -> int:
 class PtsCodec:
     def encode(self, pts: list[float]) -> bytes:
         # Choose unit: μs if any value isn't representable in ms within 1 unit.
-        use_micros = any(abs(p * 1000 - round(p * 1000)) > 0.5 for p in pts)
+        use_micros = any(abs(p * 1000 - round(p * 1000)) >= 0.5 for p in pts)
         scale = 1_000_000 if use_micros else 1_000
         scaled = [round(p * scale) for p in pts]
 
