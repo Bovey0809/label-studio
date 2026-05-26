@@ -22,13 +22,14 @@ DATABASES = {
 # Use a custom user model so tests can call create_user(email=..., password=...)
 # without requiring a username argument (Django's default User uses username as
 # the required identifier, but the test fixture uses email only).
-AUTH_USER_MODEL = "video_index.EmailUser"
+AUTH_USER_MODEL = "video_index_test_app.EmailUser"
 
 INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.auth",
     "rest_framework",
     "video_index",
+    "video_index_test_app",
 ]
 
 MIDDLEWARE: list[str] = []
