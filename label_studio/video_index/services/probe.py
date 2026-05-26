@@ -40,11 +40,14 @@ class ProbeResult:
 class FfprobeProber:
     def __init__(
         self,
-        ffprobe_path: str = "ffprobe",
-        timeout_seconds: int = 120,
+        ffprobe_path: str | None = None,
+        timeout_seconds: int | None = None,
     ) -> None:
-        self.ffprobe_path = ffprobe_path
-        self.timeout_seconds = timeout_seconds
+        from django.conf import settings as _settings
+        self.ffprobe_path = ffprobe_path or _settings.VIDEO_INDEX_FFPROBE_PATH
+        self.timeout_seconds = (
+            timeout_seconds if timeout_seconds is not None else _settings.VIDEO_INDEX_PROBE_TIMEOUT_SECONDS
+        )
 
     def probe(self, canonical_url: str) -> ProbeResult:
         if not shutil.which(self.ffprobe_path):

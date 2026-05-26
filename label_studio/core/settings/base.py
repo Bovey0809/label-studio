@@ -905,3 +905,11 @@ FSM_CACHE_TTL = 300  # Cache TTL in seconds (5 minutes)
 # Used for async migrations. In LSE this is set to a real queue name, including here so we
 # can use settings.SERVICE_QUEUE_NAME in async migrations in LSO
 SERVICE_QUEUE_NAME = get_env('SERVICE_QUEUE_NAME', 'default')
+
+# --- video_index ---
+# ffprobe binary path for the FfprobeProber. Override for non-PATH installs.
+VIDEO_INDEX_FFPROBE_PATH = os.environ.get("VIDEO_INDEX_FFPROBE_PATH", "ffprobe")
+# Server-side ffprobe subprocess timeout in seconds.
+VIDEO_INDEX_PROBE_TIMEOUT_SECONDS = int(os.environ.get("VIDEO_INDEX_PROBE_TIMEOUT_SECONDS", 120))
+# Max client-POSTed index payload (bytes). Returns 413 above this.
+VIDEO_INDEX_MAX_PAYLOAD_BYTES = int(os.environ.get("VIDEO_INDEX_MAX_PAYLOAD_BYTES", 5_000_000))
