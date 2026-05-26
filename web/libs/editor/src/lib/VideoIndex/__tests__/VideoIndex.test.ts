@@ -35,3 +35,22 @@ describe("VideoIndex (dense backing)", () => {
     expect(idx.frameAt(-1)).toBe(1);
   });
 });
+
+describe("VideoIndex (CFR shorthand backing)", () => {
+  const cfr = { content_key: "k", frame_count: 90, duration: 3.0, codec: "h264", cfr: { fps: 30 } };
+
+  it("timeAt produces 1-based frame * (1/fps)", () => {
+    const idx = VideoIndex.fromPayload(cfr);
+    expect(idx.timeAt(1)).toBeCloseTo(0.0, 6);
+    expect(idx.timeAt(31)).toBeCloseTo(1.0, 6);
+    expect(idx.timeAt(90)).toBeCloseTo(89 / 30, 6);
+  });
+
+  it("frameAt finds the floor of time*fps + 1", () => {
+    const idx = VideoIndex.fromPayload(cfr);
+    expect(idx.frameAt(0)).toBe(1);
+    expect(idx.frameAt(0.034)).toBe(2);
+    expect(idx.frameAt(1.0)).toBe(31);
+    expect(idx.frameAt(10)).toBe(90); // past end
+  });
+});
