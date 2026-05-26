@@ -1,4 +1,6 @@
-"""Empty URLconf for the minimal test settings."""
-from django.urls import path
+"""URLconf for the minimal test settings."""
+from django.urls import include, path
 
-urlpatterns: list = []
+urlpatterns = [
+    path("", include("video_index.urls")),
+]
