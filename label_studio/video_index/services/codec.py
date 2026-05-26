@@ -73,3 +73,24 @@ class PtsCodec:
             prev += delta
             result.append(prev / scale)
         return result
+
+    def encode_cfr_shorthand(self, fps: float, count: int) -> bytes:
+        header = HEADER_SHORTHAND
+        out = bytearray([header])
+        out += _varint_encode(round(fps * 1000))
+        out += _varint_encode(count)
+        return bytes(out)
+
+    def decode_cfr_shorthand(self, blob: bytes) -> tuple[float, int]:
+        if not self.is_shorthand(blob):
+            raise ValueError("Blob is not CFR shorthand")
+        view = memoryview(blob)
+        fps_x1000, offset = _varint_decode(view, 1)
+        count, _ = _varint_decode(view, offset)
+        return fps_x1000 / 1000, count
+
+    @staticmethod
+    def is_shorthand(blob: bytes) -> bool:
+        if not blob:
+            return False
+        return bool(blob[0] & HEADER_SHORTHAND)
