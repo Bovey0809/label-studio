@@ -2,6 +2,15 @@
 require("jest-fetch-mock").enableMocks();
 require("@testing-library/jest-dom");
 
+// ResizeObserver is not implemented in jsdom; provide a no-op mock.
+if (typeof window !== "undefined" && typeof window.ResizeObserver === "undefined") {
+  window.ResizeObserver = class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+}
+
 // Mock HTMLMediaElement data and methods not implemented by jsdom.
 window.HTMLMediaElement.prototype._mock = {
   paused: true,
