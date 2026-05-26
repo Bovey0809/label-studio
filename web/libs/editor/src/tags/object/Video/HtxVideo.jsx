@@ -1,5 +1,6 @@
 import { observer } from "mobx-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { VideoIndexLoader } from "../../../lib/VideoIndex/VideoIndexLoader";
 
 import { IconZoomIn } from "@humansignal/icons";
 import { Button } from "@humansignal/ui";
@@ -459,6 +460,33 @@ const HtxVideoView = ({ item, store }) => {
     [],
   );
 
+  useEffect(() => {
+    if (!item || !item._value) return;
+    if (item.indexStatus !== "idle") return;
+    item.setIndexStatus("loading");
+    const transport = {
+      async get() {
+        const r = await fetch(`/api/video-index/?url=${encodeURIComponent(item._value)}`);
+        return { status: r.status, body: await r.json().catch(() => ({})) };
+      },
+      async post(body) {
+        const r = await fetch(`/api/video-index/`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        return { status: r.status, body: await r.json().catch(() => ({})) };
+      },
+    };
+    const loader = new VideoIndexLoader({ transport });
+    loader.load({ videoUrl: item._value })
+      .then((idx) => item.setIndex(idx))
+      .catch((err) => {
+        console.warn("[Video] index load failed:", err);
+        item.setIndexStatus("failed");
+      });
+  }, [item, item?._value]);
+
   const regions = item.regs.map((reg) => {
     const color = reg.style?.fillcolor ?? reg.tag?.fillcolor ?? defaultStyle.fillcolor;
     const label = reg.labels.join(", ") || "Empty";
@@ -510,6 +538,9 @@ const HtxVideoView = ({ item, store }) => {
             onMouseDown={handlePan}
             onWheel={onZoomChange}
           >
+            {(item.indexStatus === "loading" || item.indexStatus === "idle") ? (
+              <div className="lsf-video-preparing" aria-live="polite">Preparing video index…</div>
+            ) : null}
             {videoSize && (
               <>
                 {loaded && supportsRegions && (
@@ -529,6 +560,7 @@ const HtxVideoView = ({ item, store }) => {
                 <VideoCanvas
                   ref={item.ref}
                   src={item._value}
+                  index={item.index}
                   width={videoSize[0]}
                   height={videoSize[1]}
                   muted={item.muted}
