@@ -1,0 +1,103 @@
+FROM python:3.12-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential ffmpeg pkg-config libpq-dev libffi-dev libxml2-dev libxslt1-dev libjpeg-dev zlib1g-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install the runtime + test dependencies directly via pip.
+# This is a curated, minimal subset chosen specifically to (a) let the project's
+# settings module bootstrap and (b) support pytest + pytest-django.
+RUN pip install --no-cache-dir \
+        "django>=5.1.8,<5.2.0" \
+        "djangorestframework==3.16.0" \
+        "drf-spectacular==0.28.0" \
+        "django-rq>=3.1,<3.2" \
+        "django-filter==24.3" \
+        "django-cors-headers==4.7.0" \
+        "django-extensions==3.2.3" \
+        "django-debug-toolbar==3.2.1" \
+        "django-environ==0.10.0" \
+        "django-model-utils==4.1.1" \
+        "django-storages==1.12.3" \
+        "django-annoying==0.10.6" \
+        "django-user-agents==0.4.0" \
+        "django-ranged-fileresponse>=0.1.2" \
+        "djangorestframework-simplejwt[crypto]>=5.4.0" \
+        "drf-flex-fields>=1.0.0" \
+        "drf-dynamic-fields==0.3.0" \
+        "drf-generators==0.5.0" \
+        "redis>=5.2.1,<5.3.0" \
+        "rq>=2.6,<2.7" \
+        "rules==3.5" \
+        "appdirs>=1.4.3" \
+        "attr==0.3.1" \
+        "attrs>=19.2.0" \
+        "pyyaml>=6.0.0" \
+        "boto3>=1.28.58" \
+        "botocore>=1.39.3" \
+        "bleach>=5.0.0,<5.1.0" \
+        "cryptography>=44.0.1" \
+        "ujson>=5.0.0" \
+        "requests>=2.31.0" \
+        "Pillow>=10.0.0" \
+        "lxml>=5.0.0" \
+        "python-json-logger>=2.0.7" \
+        "azure-storage-blob>=12.6.0" \
+        "google-cloud-storage>=2.18.2" \
+        "psycopg2-binary>=2.9.6" \
+        "label-studio-sdk==1.0.18" \
+        "ordered-set>=4.0.2" \
+        "PyJWT[crypto]>=2.10.1" \
+        "Pygments>=2.18.0" \
+        "humansignal-drf-yasg==1.21.10" \
+        "tldextract>=5.1.2" \
+        "user-agents>=2.2.0" \
+        "django-csp==4.0" \
+        "rq-scheduler>=0.13.1" \
+        "sentry-sdk>=2.0" \
+        "launchdarkly-server-sdk>=9.0" \
+        "ddtrace>=2.0" \
+        "google-auth>=2.0" \
+        "google-cloud-appengine-logging>=1.0" \
+        "openai>=1.0" \
+        "anthropic>=0.30" \
+        "boxsdk>=3.0" \
+        "psutil>=5.9" \
+        "rules" \
+        "pyrsistent>=0.20" \
+        "drf-yasg" \
+        "ipython>=8.0" \
+        "factory-boy>=3.0" \
+        "Faker>=20.0" \
+        "freezegun>=1.0" \
+        "moto[s3,sts]>=5.0" \
+        "fakeredis>=2.0" \
+        "tavern>=2.0" \
+        "pytest>=7.0" \
+        "pytest-django>=4.5" \
+        "pytest-cov" \
+        "pytest-mock" \
+        "responses" \
+        "requests-mock"
+
+WORKDIR /app
+
+# label_studio/__init__.py calls importlib.metadata.metadata('label-studio').
+# Provide a synthetic dist-info so that resolves without needing the project
+# installed as a package (the source is bind-mounted at run-time).
+RUN python -c "from pathlib import Path; \
+    base = Path('/usr/local/lib/python3.12/site-packages/label_studio-1.23.0.dev0.dist-info'); \
+    base.mkdir(parents=True, exist_ok=True); \
+    (base / 'METADATA').write_text('Metadata-Version: 2.1\nName: label-studio\nVersion: 1.23.0.dev0\n'); \
+    (base / 'RECORD').write_text(''); \
+    (base / 'INSTALLER').write_text('manual\n'); \
+    (base / 'WHEEL').write_text('Wheel-Version: 1.0\nGenerator: docker-test-min\nRoot-Is-Purelib: true\nTag: py3-none-any\n')"
+
+WORKDIR /app/label_studio
+ENV PYTHONPATH=/app
+ENV DJANGO_SETTINGS_MODULE=core.settings.label_studio
+ENV DJANGO_DB=sqlite
+ENV TEST_ENVIRONMENT=1

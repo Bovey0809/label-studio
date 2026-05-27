@@ -11,6 +11,7 @@ import { MAX_ZOOM, MIN_ZOOM } from "./VideoConstants";
 import { VirtualCanvas } from "./VirtualCanvas";
 import { VirtualVideo } from "./VirtualVideo";
 import { ff } from "@humansignal/core";
+import type { VideoIndex } from "../../lib/VideoIndex";
 
 const isSyncedBuffering = ff.isActive(ff.FF_SYNCED_BUFFERING);
 
@@ -28,6 +29,7 @@ type VideoProps = {
   pan?: PanOptions;
   allowInteractions?: boolean;
   speed: number;
+  index?: VideoIndex | null;
 
   allowPanOffscreen?: boolean;
 
@@ -197,9 +199,11 @@ export const VideoCanvas = memo(
         if (!contextRef.current) return;
 
         const currentTime = videoRef.current?.currentTime ?? 0;
-        const frameNumber = isFF(FF_VIDEO_FRAME_SEEK_PRECISION)
-          ? Math.ceil(currentTime * framerate)
-          : Math.round(currentTime * framerate);
+        const frameNumber = props.index
+          ? props.index.frameAt(currentTime)
+          : isFF(FF_VIDEO_FRAME_SEEK_PRECISION)
+            ? Math.ceil(currentTime * framerate)
+            : Math.round(currentTime * framerate);
         const frame = clamp(frameNumber, 1, length || 1);
         const onChange = props.onFrameChange ?? (() => {});
 
@@ -209,7 +213,7 @@ export const VideoCanvas = memo(
           onChange(frame, length);
         }
       },
-      [framerate, currentFrame, drawVideo, props.onFrameChange, length],
+      [framerate, currentFrame, drawVideo, props.onFrameChange, length, props.index],
     );
 
     const handleVideoBuffering = useCallback(
@@ -499,16 +503,16 @@ export const VideoCanvas = memo(
         return time ?? this.currentTime;
       },
       goToFrame(frame: number) {
+        const idx = props.index;
+        if (idx) {
+          const clamped = clamp(frame, 1, idx.length);
+          this.currentTime = idx.timeAt(clamped);
+          return;
+        }
+        // Fallback to the existing framerate math (kept until all callers pass an index).
         const frameClamped = clamp(frame, 1, length);
-
-        // We need to subtract 1 from the frame number because the frame number is 1-based
-        // and the currentTime is 0-based
         const frameZeroBased = frameClamped - 1;
-
-        // Calculate exact frame time
         const exactTime = frameZeroBased / framerate;
-
-        // Round to next closest browser precision frame time
         this.currentTime = this.frameSteppedTime(exactTime, true);
       },
     };
@@ -563,9 +567,11 @@ export const VideoCanvas = memo(
           const video = videoRef.current;
 
           loadTimeout = setTimeout(() => {
-            const length = isFF(FF_VIDEO_FRAME_SEEK_PRECISION)
-              ? Math.round(video.duration * framerate)
-              : Math.ceil(video.duration * framerate);
+            const length = props.index
+              ? props.index.length
+              : isFF(FF_VIDEO_FRAME_SEEK_PRECISION)
+                ? Math.round(video.duration * framerate)
+                : Math.ceil(video.duration * framerate);
             const [width, height] = [video.videoWidth, video.videoHeight];
 
             const dimensions = {

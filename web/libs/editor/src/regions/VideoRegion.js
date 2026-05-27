@@ -6,6 +6,7 @@ import { AnnotationMixin } from "../mixins/AnnotationMixin";
 import NormalizationMixin from "../mixins/Normalization";
 import RegionsMixin from "../mixins/Regions";
 import { VideoModel } from "../tags/object/Video";
+import { buildVideoSequenceValue } from "./videoSequenceValue";
 
 export const onlyProps = (props, obj) => {
   return Object.fromEntries(props.map((prop) => [prop, obj[prop]]));
@@ -50,19 +51,18 @@ const Model = types
     },
 
     serialize() {
-      const { framerate, length: framesCount } = self.object;
+      const { framerate, length, index } = self.object;
 
       const duration = self.object?.ref?.current?.duration ?? 0;
 
-      const value = {
-        framesCount,
-        duration,
-        sequence: self.sequence.map((keyframe) => {
-          return { ...keyframe, time: keyframe.frame / framerate };
-        }),
-      };
+      const { framesCount, sequence } = buildVideoSequenceValue({
+        index,
+        framerate,
+        length,
+        sequence: self.sequence,
+      });
 
-      return { value };
+      return { value: { framesCount, duration, sequence } };
     },
 
     toggleLifespan(frame) {
