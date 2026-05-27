@@ -165,8 +165,13 @@ then `http://localhost:8088`.
 cd web && BUILD_NO_SERVER=true BUILD_NO_HASH=true BUILD_NO_CHUNKS=true BUILD_MODULE=true NODE_ENV=production yarn build
 # ship dist + only the changed backend files (don't clobber server-generated static_build/version_.py/DB)
 cd .. && tar czf - web/dist label_studio/<changed>.py | ssh labelstudio 'tar xzf - -C /root/autodl-tmp/label-studio'
-# restart BOTH services (worker imports video_index code)
-ssh labelstudio 'pkill -9 -f "bin/label-studio"; pkill -9 -f rqworker; sleep 2'
+# restart BOTH services (worker imports video_index code).
+# NOTE: use self-excluding bracket patterns `[b]`/`[m]` — a plain `pkill -f rqworker`
+# run over ssh matches its OWN launching shell (whose command line contains "rqworker")
+# and kills the session before the real workers, leaving stale old-code workers alive.
+ssh labelstudio 'pkill -9 -f "[b]in/label-studio"; pkill -9 -f "[m]anage.py rqworker"; sleep 2'
+# verify nothing stale survived (should print only what you are about to start, i.e. nothing):
+ssh labelstudio 'ps -eo pid,lstart,cmd | grep -E "[m]anage.py rqworker|[b]in/label-studio" || echo "all stopped ✓"'
 ssh labelstudio 'setsid bash /root/autodl-tmp/start_worker.sh </dev/null >/root/autodl-tmp/ls_worker.log 2>&1 & echo ok'
 ssh labelstudio 'setsid bash /root/autodl-tmp/start_ls.sh     </dev/null >/root/autodl-tmp/ls_server.log 2>&1 & echo ok'
 ```
@@ -194,6 +199,8 @@ LocalFilesImportStorage.objects.create(project_id=<id>, path="/root/autodl-tmp/l
 | Editor stuck "Preparing video index…", bbox doesn't render | ffprobe/Redis/worker missing, or LS started before Redis. Do §4+§7; then delete stale rows: `VideoIndex.objects.exclude(status="ready").delete()` (PENDING rows never auto-retry). |
 | `/api/video-index/` 500 `Connection refused localhost:6379` | Redis not running → `redis-server --daemonize yes`, restart LS. |
 | `/api/video-index/` stuck at 202 | No worker, or no ffprobe, or stale PENDING row. Check `ls_worker.log`. |
+| `/api/video-index/` 409 `backend cannot fetch url` (uploaded/"import mp4" video) | The resolver maps the served-media URL (`/data/upload/<rel>`) to `MEDIA_ROOT` on disk; ensure the running worker has that code (`VideoUrlResolver._resolve_media_files`) and no stale old worker is alive (next row). Delete the `unavailable` row and re-trigger. |
+| Index keeps coming back wrong after a deploy | A stale **old-code** rqworker survived the restart and grabbed the job. List them with `ps -eo pid,lstart,cmd \| grep "[m]anage.py rqworker"`, kill leftovers by PID, keep exactly one. Caused by the `pkill` self-match — see the bracket-pattern note in §9. |
 | `pip` "No matching distribution for poetry-core" | Proxy is breaking Aliyun mirror → set `no_proxy` (§3). |
 | Login POST 403 | Public URL not in `CSRF_TRUSTED_ORIGINS`. |
 | `/static/` fonts 404 | Run `collectstatic` (§5), restart LS. |
