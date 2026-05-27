@@ -360,6 +360,12 @@ def _async_reimport_background_streaming(reimport, project, organization_id, use
 
             # Update task states for all tasks at once
             all_tasks_queryset = Task.objects.filter(id__in=all_created_task_ids)
+            try:
+                from video_index.prewarm import prewarm_video_indexes
+
+                prewarm_video_indexes(project, all_tasks_queryset)
+            except Exception:
+                logger.exception('video index pre-warm failed')
             recalculate_stats_counts = {
                 'task_count': total_task_count,
                 'annotation_count': total_annotation_count,
@@ -522,6 +528,12 @@ def _async_import_background_streaming(project_import, user):
             }
 
             all_tasks_queryset = Task.objects.filter(id__in=all_created_task_ids)
+            try:
+                from video_index.prewarm import prewarm_video_indexes
+
+                prewarm_video_indexes(project, all_tasks_queryset)
+            except Exception:
+                logger.exception('video index pre-warm failed')
             project.update_tasks_counters_and_task_states(
                 tasks_queryset=all_tasks_queryset,
                 maximum_annotations_changed=False,

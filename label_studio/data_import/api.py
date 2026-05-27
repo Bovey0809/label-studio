@@ -256,6 +256,12 @@ class ImportAPI(generics.CreateAPIView):
         emit_webhooks_for_instance(
             self.request.user.active_organization, project, WebhookAction.TASKS_CREATED, task_instances
         )
+        try:
+            from video_index.prewarm import prewarm_video_indexes
+
+            prewarm_video_indexes(project, task_instances)
+        except Exception:
+            logger.exception('video index pre-warm failed')
         return task_instances, serializer
 
     def sync_import(self, request, project, preannotated_from_fields, commit_to_project, return_task_ids):

@@ -28,6 +28,24 @@ logger = logging.getLogger(__name__)
 
 
 @job("low")
+def prewarm_video_index(raw_url: str) -> None:
+    """Resolve a video URL, create its row if missing, and compute the index.
+
+    Used to pre-warm indexes at import time. Resolving (which may HEAD a remote
+    URL) happens here in the worker, never in the import request path.
+    """
+    resolved = VideoUrlResolver().resolve(task=None, raw_url=raw_url)
+    content_key = resolved.content_key
+    row, _ = VideoIndex.objects.get_or_create(
+        content_key=content_key,
+        defaults={"status": VideoIndex.STATUS_PENDING},
+    )
+    if row.status == VideoIndex.STATUS_READY:
+        return  # already warmed
+    compute_video_index(content_key=content_key, raw_url=raw_url)
+
+
+@job("low")
 def compute_video_index(content_key: str, raw_url: str) -> None:
     with transaction.atomic():
         qs = VideoIndex.objects.filter(content_key=content_key)
