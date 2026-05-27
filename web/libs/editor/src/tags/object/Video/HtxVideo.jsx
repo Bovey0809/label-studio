@@ -376,9 +376,12 @@ const HtxVideoView = ({ item, store }) => {
       setLoaded(true);
       setZoom(videoDimensions.ratio);
       setVideoDimensions(videoDimensions);
-      setVideoLength(length);
+      // The ffmpeg index is authoritative for the frame count; the canvas may have
+      // computed `length` from the framerate fallback before the index was ready.
+      const effectiveLength = item.index ? item.index.length : length;
+      setVideoLength(effectiveLength);
       item.setOnlyFrame(1);
-      item.setLength(length);
+      item.setLength(effectiveLength);
       item.setReady(true);
     },
     [item, setVideoLength],

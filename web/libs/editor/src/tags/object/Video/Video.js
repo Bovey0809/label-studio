@@ -355,7 +355,9 @@ const Model = types
       },
 
       setLength(length) {
-        self.length = length;
+        // When an ffmpeg index is present it is authoritative for the frame count,
+        // so ignore a stale framerate-derived length from the canvas.
+        self.length = self.index ? self.index.length : length;
       },
 
       setIndex(index) {

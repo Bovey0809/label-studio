@@ -123,6 +123,10 @@ export const VideoCanvas = memo(
     const videoRef = useRef<HTMLVideoElement>();
     const supportedFileTypeRef = useRef<boolean | null>(null);
     const hasLoadedRef = useRef<boolean>(false);
+    // Always-current index, so the one-time (empty-deps) video-load effect reads the
+    // latest index instead of the (often null) value captured at mount.
+    const indexRef = useRef(props.index);
+    indexRef.current = props.index;
 
     const canvasWidth = useMemo(() => props.width ?? 600, [props.width]);
     const canvasHeight = useMemo(() => props.height ?? 600, [props.height]);
@@ -215,6 +219,16 @@ export const VideoCanvas = memo(
       },
       [framerate, currentFrame, drawVideo, props.onFrameChange, length, props.index],
     );
+
+    // The ffmpeg index loads asynchronously, often after the one-time video-load
+    // effect already set `length` from the framerate fallback. When it arrives it
+    // is authoritative for the frame count, so adopt it here (otherwise the last
+    // frames of a VFR clip stay unreachable and the timeline length is wrong).
+    useEffect(() => {
+      if (!props.index) return;
+      setLength(props.index.length);
+      props.onFrameChange?.(currentFrame, props.index.length);
+    }, [props.index]);
 
     const handleVideoBuffering = useCallback(
       (isBuffering: boolean) => {
@@ -567,8 +581,9 @@ export const VideoCanvas = memo(
           const video = videoRef.current;
 
           loadTimeout = setTimeout(() => {
-            const length = props.index
-              ? props.index.length
+            const idx = indexRef.current;
+            const length = idx
+              ? idx.length
               : isFF(FF_VIDEO_FRAME_SEEK_PRECISION)
                 ? Math.round(video.duration * framerate)
                 : Math.ceil(video.duration * framerate);

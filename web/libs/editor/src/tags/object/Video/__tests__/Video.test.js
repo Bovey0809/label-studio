@@ -28,6 +28,36 @@ describe("Video MST integration", () => {
     expect(inst.index).toBe(idx);
   });
 
+  it("setIndex sets length to the index frame count", () => {
+    const Model = VideoModule.VideoModelFactoryForTests();
+    const inst = Model.create({ type: "video" });
+    const idx = VideoIndex.fromPayload({
+      content_key: "k", frame_count: 142, duration: 4.968, codec: "h264", pts: Array.from({ length: 142 }, (_, i) => i * 0.033),
+    });
+    inst.setIndex(idx);
+    expect(inst.length).toBe(142);
+  });
+
+  it("setLength keeps the index frame count when an index is present", () => {
+    const Model = VideoModule.VideoModelFactoryForTests();
+    const inst = Model.create({ type: "video" });
+    const idx = VideoIndex.fromPayload({
+      content_key: "k", frame_count: 142, duration: 4.968, codec: "h264", pts: Array.from({ length: 142 }, (_, i) => i * 0.033),
+    });
+    inst.setIndex(idx);
+    // The canvas may report a stale framerate-derived length (e.g. duration*24=114);
+    // with an index present the model must keep the true frame count.
+    inst.setLength(114);
+    expect(inst.length).toBe(142);
+  });
+
+  it("setLength uses the given value when no index is present", () => {
+    const Model = VideoModule.VideoModelFactoryForTests();
+    const inst = Model.create({ type: "video" });
+    inst.setLength(114);
+    expect(inst.length).toBe(114);
+  });
+
   it("setIndexStatus('failed') leaves index null and ready=false", () => {
     const Model = VideoModule.VideoModelFactoryForTests();
     const inst = Model.create({ type: "video" });

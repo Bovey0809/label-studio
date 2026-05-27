@@ -45,6 +45,33 @@ const expectIndexReady = () => {
 };
 
 describe("Video ffmpeg frame alignment", () => {
+  it("uses the index frame count for the timeline length, even after stepping", () => {
+    stubVideoIndex();
+
+    LabelStudio.params().config(simpleVideoConfig).data(simpleVideoData).withResult([]).init();
+    LabelStudio.waitForObjectsReady();
+    cy.wait("@videoIndex");
+    expectIndexReady();
+
+    const videoTag = (win: any) => win.Htx.annotationStore.selected.objects.find((o: any) => o.type === "video");
+
+    // Both the model and the canvas must report the index frame count (11), not the
+    // framerate-derived value for this clip (~131) — otherwise the last frames are
+    // unreachable in the UI.
+    cy.window().should((win: any) => {
+      const video = videoTag(win);
+      expect(video.length, "model length").to.eq(INDEX_PTS.length);
+      expect(video.ref.current.length, "canvas length").to.eq(INDEX_PTS.length);
+    });
+
+    // Stepping a frame must NOT revert the length to the framerate value (regression:
+    // the canvas's stale load-time length used to clobber the index length on step).
+    VideoView.clickAtFrame(2);
+    cy.window().should((win: any) => {
+      expect(videoTag(win).ref.current.length, "canvas length after step").to.eq(INDEX_PTS.length);
+    });
+  });
+
   it("serializes framesCount and keyframe time from the index, not the framerate", () => {
     stubVideoIndex();
 
