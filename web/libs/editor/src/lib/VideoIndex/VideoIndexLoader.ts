@@ -13,7 +13,13 @@ export interface LoaderOptions {
   pollIntervalMs?: number;
   fallbackTimeoutMs?: number;
   wasmProbe?: (videoUrl: string) => Promise<IndexPayload>;
-  cache?: { get(k: string): Promise<IndexPayload | undefined>; put(p: IndexPayload): Promise<void> };
+  /** Cache keyed by video URL. Enables instant re-opens; kept fresh via revalidation. */
+  cache?: {
+    get(videoUrl: string): Promise<IndexPayload | undefined>;
+    put(videoUrl: string, payload: IndexPayload): Promise<void>;
+  };
+  /** Called when background revalidation finds a newer index than the cached one. */
+  onRevalidated?: (index: VideoIndex) => void;
 }
 
 export class VideoIndexLoader {
@@ -22,10 +28,31 @@ export class VideoIndexLoader {
   constructor(private readonly opts: LoaderOptions) {}
 
   async load(args: { videoUrl: string }): Promise<VideoIndex> {
+    const cache = this.opts.cache;
+    if (cache) {
+      let cached: IndexPayload | undefined;
+      try { cached = await cache.get(args.videoUrl); } catch { cached = undefined; }
+      if (cached && this.validator.validate(cached).ok) {
+        // Instant display, but revalidate in the background: the URL key can go
+        // stale if the underlying video changed, so re-apply if the server's
+        // content_key differs. Errors here must never affect the returned index.
+        this.revalidate(args.videoUrl, cached.content_key).catch(() => {});
+        return VideoIndex.fromPayload(cached);
+      }
+    }
+
+    const index = await this.loadFromSources(args.videoUrl);
+    if (cache) {
+      try { await cache.put(args.videoUrl, index.toPayload()); } catch { /* best-effort */ }
+    }
+    return index;
+  }
+
+  private async loadFromSources(videoUrl: string): Promise<VideoIndex> {
     const pollIntervalMs = this.opts.pollIntervalMs ?? 1000;
     const fallbackTimeoutMs = this.opts.fallbackTimeoutMs ?? 10_000;
     const serverPromise = this.serverPath(pollIntervalMs);
-    const wasmPromise = this.wasmPath(args.videoUrl, fallbackTimeoutMs);
+    const wasmPromise = this.wasmPath(videoUrl, fallbackTimeoutMs);
     // Suppress unhandled rejections on the abandoned promise after one wins.
     serverPromise.catch(() => {});
     wasmPromise.catch(() => {});
@@ -39,6 +66,13 @@ export class VideoIndexLoader {
       }
       throw e;
     }
+  }
+
+  private async revalidate(videoUrl: string, cachedKey: string): Promise<void> {
+    const fresh = await this.serverPath(this.opts.pollIntervalMs ?? 1000);
+    if (fresh.contentKey === cachedKey) return; // cache still valid
+    if (this.opts.cache) await this.opts.cache.put(videoUrl, fresh.toPayload());
+    this.opts.onRevalidated?.(fresh);
   }
 
   private async serverPath(pollIntervalMs: number): Promise<VideoIndex> {

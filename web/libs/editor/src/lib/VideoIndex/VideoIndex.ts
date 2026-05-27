@@ -12,6 +12,11 @@ export class VideoIndex {
     private readonly cfr: { fps: number; count?: number } | null,
   ) {}
 
+  /** The raw payload this index was built from (for write-through caching). */
+  toPayload(): IndexPayload {
+    return this.payload;
+  }
+
   get length(): number {
     return this.payload.frame_count;
   }

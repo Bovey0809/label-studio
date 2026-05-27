@@ -36,6 +36,73 @@ describe("VideoIndexLoader — server happy path", () => {
   });
 });
 
+describe("VideoIndexLoader — cache", () => {
+  const payload = (ck: string, n: number) => ({
+    content_key: ck,
+    frame_count: n,
+    duration: 0.1,
+    codec: "h264",
+    pts: Array.from({ length: n }, (_, i) => i * 0.05),
+  });
+
+  it("returns the cached index instantly (does not wait for the server)", async () => {
+    const store = new Map<string, any>([["u", payload("k", 3)]]);
+    // Server would return a DIFFERENT index; the resolved value must be the cached one,
+    // proving load() did not block on (or use) the server for its result.
+    const t = makeTransport([async () => ({ status: 200, body: payload("k", 9) })]);
+    const cache = { get: async (url: string) => store.get(url), put: jest.fn(async () => {}) };
+    const loader = new VideoIndexLoader({ transport: t, cache, pollIntervalMs: 1, fallbackTimeoutMs: 60_000 });
+
+    const idx = await loader.load({ videoUrl: "u" });
+    expect(idx.length).toBe(3); // cached, not the server's 9
+  });
+
+  it("write-through caches the server payload (keyed by url) on a miss", async () => {
+    const puts: Array<[string, any]> = [];
+    const t = makeTransport([async () => ({ status: 200, body: payload("k", 2) })]);
+    const cache = { get: async () => undefined, put: async (url: string, p: any) => { puts.push([url, p]); } };
+    const loader = new VideoIndexLoader({ transport: t, cache, pollIntervalMs: 1, fallbackTimeoutMs: 60_000 });
+
+    const idx = await loader.load({ videoUrl: "u" });
+    expect(idx.length).toBe(2);
+    expect(puts).toEqual([["u", payload("k", 2)]]);
+  });
+
+  it("revalidates a cache hit in the background and re-applies a changed index", async () => {
+    const store = new Map<string, any>([["u", payload("OLD", 3)]]);
+    const t = makeTransport([async () => ({ status: 200, body: payload("NEW", 5) })]);
+    const revalidated: any[] = [];
+    const cache = { get: async (url: string) => store.get(url), put: async (url: string, p: any) => { store.set(url, p); } };
+    const loader = new VideoIndexLoader({
+      transport: t, cache, pollIntervalMs: 1, fallbackTimeoutMs: 60_000,
+      onRevalidated: (idx) => revalidated.push(idx),
+    });
+
+    const idx = await loader.load({ videoUrl: "u" });
+    expect(idx.length).toBe(3); // instant: stale cached value
+
+    await new Promise((r) => setTimeout(r, 30)); // let background revalidation run
+    expect(revalidated).toHaveLength(1);
+    expect(revalidated[0].length).toBe(5);
+    expect(store.get("u").content_key).toBe("NEW");
+  });
+
+  it("does not re-apply when revalidation finds the same content_key", async () => {
+    const store = new Map<string, any>([["u", payload("same", 3)]]);
+    const t = makeTransport([async () => ({ status: 200, body: payload("same", 3) })]);
+    const revalidated: any[] = [];
+    const cache = { get: async (url: string) => store.get(url), put: async () => {} };
+    const loader = new VideoIndexLoader({
+      transport: t, cache, pollIntervalMs: 1, fallbackTimeoutMs: 60_000,
+      onRevalidated: (idx) => revalidated.push(idx),
+    });
+
+    await loader.load({ videoUrl: "u" });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(revalidated).toHaveLength(0);
+  });
+});
+
 describe("VideoIndexLoader — wasm fallback", () => {
   it("dispatches wasm probe on 409 and POSTs the result back", async () => {
     const posts: any[] = [];

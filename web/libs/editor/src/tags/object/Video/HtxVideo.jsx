@@ -1,6 +1,7 @@
 import { observer } from "mobx-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { VideoIndexLoader } from "../../../lib/VideoIndex/VideoIndexLoader";
+import { VideoIndexCache } from "../../../lib/VideoIndex/VideoIndexCache";
 
 import { IconZoomIn } from "@humansignal/icons";
 import { Button } from "@humansignal/ui";
@@ -28,6 +29,25 @@ import { VideoRegions } from "./VideoRegions";
 import { ff } from "@humansignal/core";
 
 const isSyncedBuffering = ff.isActive(ff.FF_SYNCED_BUFFERING);
+
+// Shared IndexedDB-backed cache so re-opening a video shows its ffmpeg index
+// instantly (no network round-trip). Keyed by video URL; revalidated in the
+// background so a re-indexed video self-heals. Guarded for environments
+// without IndexedDB (returns undefined -> loader just skips caching).
+let _videoIndexCache = null;
+function getVideoIndexCacheAdapter() {
+  if (typeof indexedDB === "undefined") return undefined;
+  try {
+    if (!_videoIndexCache) _videoIndexCache = new VideoIndexCache();
+    const cache = _videoIndexCache;
+    return {
+      get: (url) => cache.getByUrl(url),
+      put: (url, payload) => cache.putByUrl(url, payload),
+    };
+  } catch {
+    return undefined;
+  }
+}
 
 function useZoom(videoDimensions, canvasDimentions, shouldClampPan) {
   const [zoomState, setZoomState] = useState({ zoom: 1, pan: { x: 0, y: 0 } });
@@ -140,6 +160,10 @@ const HtxVideoView = ({ item, store }) => {
   const videoContainerRef = useRef();
   const mainContentRef = useRef();
   const [loaded, setLoaded] = useState(false);
+  // Only surface the "Preparing video index…" banner if it's actually taking a
+  // moment — fast/cached/pre-warmed indexes resolve well under this delay, so
+  // the banner never flashes for them.
+  const [showPreparing, setShowPreparing] = useState(false);
   const [videoLength, _setVideoLength] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [position, _setPosition] = useState(1);
@@ -478,7 +502,12 @@ const HtxVideoView = ({ item, store }) => {
         return { status: r.status, body: await r.json().catch(() => ({})) };
       },
     };
-    const loader = new VideoIndexLoader({ transport });
+    const loader = new VideoIndexLoader({
+      transport,
+      cache: getVideoIndexCacheAdapter(),
+      // Background revalidation found a newer index than the cached one — re-apply it.
+      onRevalidated: (idx) => item.setIndex(idx),
+    });
     loader.load({ videoUrl: item._value })
       .then((idx) => item.setIndex(idx))
       .catch((err) => {
@@ -486,6 +515,17 @@ const HtxVideoView = ({ item, store }) => {
         item.setIndexStatus("failed");
       });
   }, [item, item?._value]);
+
+  // Delay the "Preparing…" banner so fast/cached index loads don't flash it.
+  useEffect(() => {
+    const preparing = item.indexStatus === "loading" || item.indexStatus === "idle";
+    if (!preparing) {
+      setShowPreparing(false);
+      return;
+    }
+    const timer = setTimeout(() => setShowPreparing(true), 250);
+    return () => clearTimeout(timer);
+  }, [item.indexStatus]);
 
   const regions = item.regs.map((reg) => {
     const color = reg.style?.fillcolor ?? reg.tag?.fillcolor ?? defaultStyle.fillcolor;
@@ -538,7 +578,7 @@ const HtxVideoView = ({ item, store }) => {
             onMouseDown={handlePan}
             onWheel={onZoomChange}
           >
-            {(item.indexStatus === "loading" || item.indexStatus === "idle") ? (
+            {showPreparing ? (
               <div className="lsf-video-preparing" aria-live="polite">Preparing video index…</div>
             ) : null}
             {videoSize && (
