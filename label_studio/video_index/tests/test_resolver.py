@@ -12,6 +12,64 @@ def test_local_path_passthrough(tmp_path):
     assert resolved.etag_or_lm == ""  # no validator for local files
 
 
+def test_local_files_url_maps_to_document_root(tmp_path, settings):
+    """A LS local-storage URL (/data/local-files/?d=rel) resolves to the file on
+    disk so the backend ffprobes it directly — no HTTP fetch, no auth needed."""
+    root = tmp_path / "docroot"
+    root.mkdir()
+    (root / "sub").mkdir()
+    f = root / "sub" / "clip.mp4"
+    f.write_bytes(b"dummy")
+    settings.LOCAL_FILES_SERVING_ENABLED = True
+    settings.LOCAL_FILES_DOCUMENT_ROOT = str(root)
+
+    resolved = VideoUrlResolver().resolve(task=None, raw_url="/data/local-files/?d=sub/clip.mp4")
+    assert resolved.canonical_url == str(f)
+    assert resolved.can_backend_fetch is True
+
+
+def test_local_files_url_is_host_agnostic(tmp_path, settings):
+    """An absolute proxy URL (e.g. AutoDL) maps by path+query, ignoring the host."""
+    root = tmp_path / "docroot"
+    root.mkdir()
+    f = root / "clip.mp4"
+    f.write_bytes(b"dummy")
+    settings.LOCAL_FILES_SERVING_ENABLED = True
+    settings.LOCAL_FILES_DOCUMENT_ROOT = str(root)
+
+    resolved = VideoUrlResolver().resolve(
+        task=None,
+        raw_url="https://region-x.autodl.com:8443/data/local-files/?d=clip.mp4",
+    )
+    assert resolved.canonical_url == str(f)
+    assert resolved.can_backend_fetch is True
+
+
+def test_local_files_path_traversal_blocked(tmp_path, settings):
+    """A ?d= that escapes the document root must not resolve to the outside file."""
+    root = tmp_path / "docroot"
+    root.mkdir()
+    secret = tmp_path / "secret.mp4"
+    secret.write_bytes(b"nope")
+    settings.LOCAL_FILES_SERVING_ENABLED = True
+    settings.LOCAL_FILES_DOCUMENT_ROOT = str(root)
+
+    resolved = VideoUrlResolver().resolve(task=None, raw_url="/data/local-files/?d=../secret.mp4")
+    assert resolved.canonical_url != str(secret)
+    assert resolved.can_backend_fetch is False
+
+
+def test_local_files_url_ignored_when_serving_disabled(tmp_path, settings):
+    root = tmp_path / "docroot"
+    root.mkdir()
+    (root / "clip.mp4").write_bytes(b"dummy")
+    settings.LOCAL_FILES_SERVING_ENABLED = False
+    settings.LOCAL_FILES_DOCUMENT_ROOT = str(root)
+    # Falls through to the HTTP path; a relative URL can't be fetched.
+    resolved = VideoUrlResolver().resolve(task=None, raw_url="/data/local-files/?d=clip.mp4")
+    assert resolved.can_backend_fetch is False
+
+
 def test_http_url_with_etag():
     fake_head = MagicMock(status_code=200, headers={"ETag": '"abc123"', "Last-Modified": ""})
     with patch("video_index.services.resolver.requests.head", return_value=fake_head):

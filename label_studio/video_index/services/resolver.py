@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import os
 from dataclasses import dataclass
+from urllib.parse import parse_qs, urlparse
 
 import requests
 
@@ -32,6 +33,10 @@ class VideoUrlResolver:
         if os.path.exists(raw_url):
             return ResolvedUrl(canonical_url=raw_url, etag_or_lm="", can_backend_fetch=True)
 
+        local = self._resolve_local_files(raw_url)
+        if local is not None:
+            return local
+
         try:
             response = requests.head(raw_url, timeout=self.head_timeout, allow_redirects=True)
         except requests.exceptions.RequestException:
@@ -46,3 +51,36 @@ class VideoUrlResolver:
             etag_or_lm=validator,
             can_backend_fetch=True,
         )
+
+    def _resolve_local_files(self, raw_url: str) -> ResolvedUrl | None:
+        """Map a LS local-storage URL to the file on disk so ffprobe can read it
+        directly. Works for both relative ("/data/local-files/?d=rel") and absolute
+        proxy URLs — only the path + ?d= query matter, never the host. Returns None
+        if this isn't a local-files URL (caller falls through to the HTTP path)."""
+        from django.conf import settings as _settings
+
+        if not getattr(_settings, "LOCAL_FILES_SERVING_ENABLED", False):
+            return None
+        doc_root = getattr(_settings, "LOCAL_FILES_DOCUMENT_ROOT", "") or ""
+        if not doc_root:
+            return None
+
+        parsed = urlparse(raw_url)
+        if not parsed.path.rstrip("/").endswith("/data/local-files"):
+            return None
+
+        rel = (parse_qs(parsed.query).get("d") or [""])[0]
+        if not rel:
+            return None
+
+        root = os.path.normpath(doc_root)
+        candidate = os.path.normpath(os.path.join(root, rel))
+        # Path-traversal guard: the resolved file must stay inside the doc root.
+        if candidate != root and not candidate.startswith(root + os.sep):
+            return ResolvedUrl(canonical_url=raw_url, etag_or_lm="", can_backend_fetch=False)
+        if not os.path.exists(candidate):
+            return ResolvedUrl(canonical_url=raw_url, etag_or_lm="", can_backend_fetch=False)
+
+        # mtime as the validator → re-encoding the file yields a new content_key.
+        validator = str(int(os.path.getmtime(candidate)))
+        return ResolvedUrl(canonical_url=candidate, etag_or_lm=validator, can_backend_fetch=True)
