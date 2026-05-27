@@ -70,6 +70,62 @@ def test_local_files_url_ignored_when_serving_disabled(tmp_path, settings):
     assert resolved.can_backend_fetch is False
 
 
+def test_uploaded_media_url_maps_to_media_root(tmp_path, settings):
+    """An imported/uploaded file served at /data/upload/<...> resolves to its path
+    under MEDIA_ROOT so the backend ffprobes it directly — no HTTP fetch/auth."""
+    media = tmp_path / "media"
+    (media / "upload" / "6").mkdir(parents=True)
+    f = media / "upload" / "6" / "clip.mp4"
+    f.write_bytes(b"dummy")
+    settings.MEDIA_URL = "/data/"
+    settings.MEDIA_ROOT = str(media)
+
+    resolved = VideoUrlResolver().resolve(task=None, raw_url="/data/upload/6/clip.mp4")
+    assert resolved.canonical_url == str(f)
+    assert resolved.can_backend_fetch is True
+
+
+def test_uploaded_media_url_is_host_agnostic(tmp_path, settings):
+    media = tmp_path / "media"
+    (media / "upload" / "6").mkdir(parents=True)
+    f = media / "upload" / "6" / "clip.mp4"
+    f.write_bytes(b"dummy")
+    settings.MEDIA_URL = "/data/"
+    settings.MEDIA_ROOT = str(media)
+
+    resolved = VideoUrlResolver().resolve(
+        task=None, raw_url="https://region-x.autodl.com:8443/data/upload/6/clip.mp4"
+    )
+    assert resolved.canonical_url == str(f)
+    assert resolved.can_backend_fetch is True
+
+
+def test_uploaded_media_url_decodes_filename(tmp_path, settings):
+    media = tmp_path / "media"
+    (media / "upload" / "6").mkdir(parents=True)
+    f = media / "upload" / "6" / "a b.mp4"
+    f.write_bytes(b"dummy")
+    settings.MEDIA_URL = "/data/"
+    settings.MEDIA_ROOT = str(media)
+
+    resolved = VideoUrlResolver().resolve(task=None, raw_url="/data/upload/6/a%20b.mp4")
+    assert resolved.canonical_url == str(f)
+    assert resolved.can_backend_fetch is True
+
+
+def test_media_path_traversal_blocked(tmp_path, settings):
+    media = tmp_path / "media"
+    media.mkdir()
+    secret = tmp_path / "secret.mp4"
+    secret.write_bytes(b"nope")
+    settings.MEDIA_URL = "/data/"
+    settings.MEDIA_ROOT = str(media)
+
+    resolved = VideoUrlResolver().resolve(task=None, raw_url="/data/../secret.mp4")
+    assert resolved.canonical_url != str(secret)
+    assert resolved.can_backend_fetch is False
+
+
 def test_http_url_with_etag():
     fake_head = MagicMock(status_code=200, headers={"ETag": '"abc123"', "Last-Modified": ""})
     with patch("video_index.services.resolver.requests.head", return_value=fake_head):

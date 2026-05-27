@@ -6,7 +6,7 @@ from __future__ import annotations
 import hashlib
 import os
 from dataclasses import dataclass
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 import requests
 
@@ -36,6 +36,10 @@ class VideoUrlResolver:
         local = self._resolve_local_files(raw_url)
         if local is not None:
             return local
+
+        media = self._resolve_media_files(raw_url)
+        if media is not None:
+            return media
 
         try:
             response = requests.head(raw_url, timeout=self.head_timeout, allow_redirects=True)
@@ -82,5 +86,41 @@ class VideoUrlResolver:
             return ResolvedUrl(canonical_url=raw_url, etag_or_lm="", can_backend_fetch=False)
 
         # mtime as the validator → re-encoding the file yields a new content_key.
+        validator = str(int(os.path.getmtime(candidate)))
+        return ResolvedUrl(canonical_url=candidate, etag_or_lm=validator, can_backend_fetch=True)
+
+    def _resolve_media_files(self, raw_url: str) -> ResolvedUrl | None:
+        """Map a served-media URL to its file under MEDIA_ROOT so ffprobe can read
+        it directly. This covers imported/uploaded videos (e.g. the "import mp4"
+        flow serves them at "/data/upload/<project>/<file>"). Mirrors
+        _resolve_local_files: host-agnostic (path only), with a path-traversal
+        guard and mtime validator. Returns None when the URL is not a media URL
+        (caller falls through to the HTTP path)."""
+        from django.conf import settings as _settings
+
+        media_url = getattr(_settings, "MEDIA_URL", "") or ""
+        media_root = getattr(_settings, "MEDIA_ROOT", "") or ""
+        if not media_url or not media_root:
+            return None
+
+        path = unquote(urlparse(raw_url).path)
+        # local-files is a separate mechanism handled above; never treat it as media.
+        if "/data/local-files" in path:
+            return None
+        if not path.startswith(media_url):
+            return None
+
+        rel = path[len(media_url):].lstrip("/")
+        if not rel:
+            return None
+
+        root = os.path.normpath(media_root)
+        candidate = os.path.normpath(os.path.join(root, rel))
+        # Path-traversal guard: the resolved file must stay inside MEDIA_ROOT.
+        if candidate != root and not candidate.startswith(root + os.sep):
+            return ResolvedUrl(canonical_url=raw_url, etag_or_lm="", can_backend_fetch=False)
+        if not os.path.exists(candidate):
+            return ResolvedUrl(canonical_url=raw_url, etag_or_lm="", can_backend_fetch=False)
+
         validator = str(int(os.path.getmtime(candidate)))
         return ResolvedUrl(canonical_url=candidate, etag_or_lm=validator, can_backend_fetch=True)
