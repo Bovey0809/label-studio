@@ -213,7 +213,7 @@ export const VideoCanvas = memo(
           onChange(frame, length);
         }
       },
-      [framerate, currentFrame, drawVideo, props.onFrameChange, length],
+      [framerate, currentFrame, drawVideo, props.onFrameChange, length, props.index],
     );
 
     const handleVideoBuffering = useCallback(
